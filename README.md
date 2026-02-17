@@ -2,6 +2,7 @@
 
 Monolito modular por dominios (DDD-lite) para un orquestador I/O-bound con seguridad multi-tenant.
 
+<<<<<<< codex/create-node.js-project-with-nestjs-1pi1q2
 ## Estado actual del proyecto
 
 Actualmente el repositorio ya tiene:
@@ -25,6 +26,16 @@ Actualmente el repositorio ya tiene:
 - `src/infra`: infraestructura compartida (Prisma, config, etc.).
 - `src/shared`: concerns transversales (guards, decorators, utilidades).
 - `prisma/schema.prisma`: modelo completo del dominio A.
+=======
+## Estructura
+
+- `src/modules/<dominio>/domain`: entidades y contratos puros.
+- `src/modules/<dominio>/application`: casos de uso y DTOs.
+- `src/modules/<dominio>/infra`: controladores y repositorios Prisma.
+- `src/infra`: infraestructura compartida (Prisma, config).
+- `src/shared`: guards/decorators transversales.
+- `prisma/schema.prisma`: modelo completo dominio A (base y seguridad).
+>>>>>>> main
 
 ## Dominios implementados
 
@@ -58,6 +69,7 @@ Incluye las entidades del dominio A:
 9. security_event_log
 10. api_client
 
+<<<<<<< codex/create-node.js-project-with-nestjs-1pi1q2
 ---
 
 ## ¿Qué podríamos probar ahora mismo?
@@ -168,3 +180,13 @@ npm run start
 - `GET /api/v1/tenants/:id`
 - `PATCH /api/v1/tenants/:id`
 - `DELETE /api/v1/tenants/:id`
+=======
+## Arranque
+```bash
+npm install
+cp .env.example .env
+npm run prisma:generate
+npm run build
+npm run start
+```
+>>>>>>> main
