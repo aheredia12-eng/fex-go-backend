@@ -1,0 +1,320 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  active
+  suspended
+  inactive
+}
+
+enum ActorType {
+  user
+  system
+  api
+  service
+}
+
+enum ActorStatus {
+  active
+  inactive
+  locked
+}
+
+enum PermissionEffect {
+  allow
+  deny
+}
+
+enum MfaType {
+  totp
+  sms
+  email
+  hardware
+}
+
+enum LogLevel {
+  debug
+  info
+  warn
+  error
+  critical
+}
+
+enum ApiClientType {
+  service
+  confidential
+  public
+}
+
+enum ApiClientStatus {
+  active
+  inactive
+  revoked
+}
+
+model Tenant {
+  id         String       @id @default(uuid()) @db.Uuid
+  name       String       @db.VarChar(255)
+  code       String       @unique @db.VarChar(50)
+  status     TenantStatus @default(active)
+  settings   Json         @default("{}")
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  createdBy  String?      @db.Uuid @map("created_by")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  updatedBy  String?      @db.Uuid @map("updated_by")
+  isDeleted  Boolean      @default(false) @map("is_deleted")
+  deletedAt  DateTime?    @map("deleted_at")
+  deletedBy  String?      @db.Uuid @map("deleted_by")
+
+  actors                Actor[]
+  roles                 Role[]
+  actorRoles            ActorRole[]
+  permissionPolicies    PermissionPolicy[]
+  sessions              Session[]
+  mfaPolicies           MfaPolicy[]
+  credentialRotations   CredentialRotation[]
+  securityEventLogs     SecurityEventLog[]
+  apiClients            ApiClient[]
+
+  @@index([status])
+  @@index([isDeleted])
+  @@map("tenant")
+}
+
+model Actor {
+  id               String      @id @default(uuid()) @db.Uuid
+  tenantId         String      @db.Uuid @map("tenant_id")
+  type             ActorType
+  email            String?     @db.VarChar(255)
+  phone            String?     @db.VarChar(20)
+  displayName      String      @map("display_name") @db.VarChar(255)
+  status           ActorStatus @default(active)
+  passwordHash     String?     @map("password_hash") @db.Char(60)
+  lastLoginAt      DateTime?   @map("last_login_at")
+  failedLoginCount Int         @default(0) @map("failed_login_count")
+  lockedUntil      DateTime?   @map("locked_until")
+  preferences      Json        @default("{}")
+  externalId       String?     @map("external_id") @db.VarChar(255)
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  isDeleted        Boolean     @default(false) @map("is_deleted")
+  deletedAt        DateTime?   @map("deleted_at")
+  createdBy        String?     @db.Uuid @map("created_by")
+  updatedBy        String?     @db.Uuid @map("updated_by")
+  deletedBy        String?     @db.Uuid @map("deleted_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([status])
+  @@index([isDeleted])
+  @@map("actor")
+}
+
+model Role {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @db.Uuid @map("tenant_id")
+  name         String    @db.VarChar(255)
+  code         String    @db.VarChar(100)
+  description  String?
+  isSystem     Boolean   @default(false) @map("is_system")
+  permissions  Json      @default("{}")
+  parentRoleId String?   @db.Uuid @map("parent_role_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  isDeleted    Boolean   @default(false) @map("is_deleted")
+  deletedAt    DateTime? @map("deleted_at")
+  createdBy    String?   @db.Uuid @map("created_by")
+  updatedBy    String?   @db.Uuid @map("updated_by")
+  deletedBy    String?   @db.Uuid @map("deleted_by")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  parentRole Role?  @relation("RoleParent", fields: [parentRoleId], references: [id], onDelete: SetNull)
+  childRoles Role[] @relation("RoleParent")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([parentRoleId])
+  @@index([isSystem])
+  @@map("role")
+}
+
+model ActorRole {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid @map("tenant_id")
+  actorId   String    @db.Uuid @map("actor_id")
+  roleId    String    @db.Uuid @map("role_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  createdBy String?   @db.Uuid @map("created_by")
+  expiresAt DateTime? @map("expires_at")
+  scopeType String?   @map("scope_type") @db.VarChar(50)
+  scopeId   String?   @db.Uuid @map("scope_id")
+  updatedAt DateTime? @updatedAt @map("updated_at")
+  updatedBy String?   @db.Uuid @map("updated_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor  Actor  @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, actorId, roleId])
+  @@index([tenantId])
+  @@index([actorId])
+  @@index([roleId])
+  @@map("actor_role")
+}
+
+model PermissionPolicy {
+  id         String           @id @default(uuid()) @db.Uuid
+  tenantId   String           @db.Uuid @map("tenant_id")
+  roleId     String           @db.Uuid @map("role_id")
+  resource   String           @db.VarChar(255)
+  action     String           @db.VarChar(100)
+  effect     PermissionEffect @default(allow)
+  conditions Json?
+  priority   Int              @default(0)
+  createdAt  DateTime         @default(now()) @map("created_at")
+  isDeleted  Boolean          @default(false) @map("is_deleted")
+  deletedAt  DateTime?        @map("deleted_at")
+  createdBy  String?          @db.Uuid @map("created_by")
+  updatedAt  DateTime?        @updatedAt @map("updated_at")
+  updatedBy  String?          @db.Uuid @map("updated_by")
+  deletedBy  String?          @db.Uuid @map("deleted_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([roleId])
+  @@index([resource, action])
+  @@map("permission_policy")
+}
+
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @db.Uuid @map("tenant_id")
+  actorId          String    @db.Uuid @map("actor_id")
+  tokenHash        String    @map("token_hash") @db.Char(64)
+  refreshTokenHash String?   @map("refresh_token_hash") @db.Char(64)
+  ipAddress        String?   @map("ip_address") @db.VarChar(45)
+  userAgent        String?   @map("user_agent") @db.VarChar(1024)
+  deviceInfo       Json?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  lastActivityAt   DateTime? @map("last_activity_at")
+  revokedAt        DateTime? @map("revoked_at")
+  createdBy        String?   @db.Uuid @map("created_by")
+  updatedAt        DateTime? @updatedAt @map("updated_at")
+  updatedBy        String?   @db.Uuid @map("updated_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor  Actor  @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@index([expiresAt])
+  @@map("session")
+}
+
+model MfaPolicy {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @db.Uuid @map("tenant_id")
+  actorId         String?   @db.Uuid @map("actor_id")
+  type            MfaType
+  isRequired      Boolean   @default(false) @map("is_required")
+  isEnabled       Boolean   @default(false) @map("is_enabled")
+  config          Json      @default("{}")
+  secretRef       String?   @map("secret_ref") @db.VarChar(255)
+  backupCodesHash Json?     @map("backup_codes_hash")
+  verifiedAt      DateTime? @map("verified_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  isDeleted       Boolean   @default(false) @map("is_deleted")
+  deletedAt       DateTime? @map("deleted_at")
+  createdBy       String?   @db.Uuid @map("created_by")
+  updatedAt       DateTime? @updatedAt @map("updated_at")
+  updatedBy       String?   @db.Uuid @map("updated_by")
+  deletedBy       String?   @db.Uuid @map("deleted_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor  Actor? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@map("mfa_policy")
+}
+
+model CredentialRotation {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @db.Uuid @map("tenant_id")
+  actorId        String   @db.Uuid @map("actor_id")
+  credentialType String   @map("credential_type") @db.VarChar(50)
+  previousHash   String   @map("previous_hash") @db.Char(64)
+  createdAt      DateTime @default(now()) @map("created_at")
+  createdBy      String?  @db.Uuid @map("created_by")
+  reason         String?  @db.VarChar(255)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor  Actor  @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([actorId])
+  @@map("credential_rotation")
+}
+
+model SecurityEventLog {
+  id        String    @id @default(uuid()) @db.Uuid
+  tenantId  String    @db.Uuid @map("tenant_id")
+  actorId   String?   @db.Uuid @map("actor_id")
+  sessionId String?   @db.Uuid @map("session_id")
+  eventType String    @map("event_type") @db.VarChar(100)
+  severity  LogLevel  @default(info)
+  ipAddress String?   @map("ip_address") @db.VarChar(45)
+  userAgent String?   @map("user_agent") @db.VarChar(1024)
+  resource  String?   @db.VarChar(255)
+  action    String?   @db.VarChar(100)
+  result    String    @db.VarChar(50)
+  details   Json?
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([eventType])
+  @@index([severity])
+  @@map("security_event_log")
+}
+
+model ApiClient {
+  id               String          @id @default(uuid()) @db.Uuid
+  tenantId         String          @db.Uuid @map("tenant_id")
+  name             String          @db.VarChar(255)
+  clientId         String          @unique @map("client_id") @db.VarChar(100)
+  clientSecretHash String          @map("client_secret_hash") @db.Char(60)
+  type             ApiClientType   @default(service)
+  scopes           Json            @default("[]")
+  redirectUris     Json?           @default("[]") @map("redirect_uris")
+  status           ApiClientStatus @default(active)
+  rateLimit        Int?            @map("rate_limit")
+  allowedIps       Json?           @default("[]") @map("allowed_ips")
+  lastUsedAt       DateTime?       @map("last_used_at")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  isDeleted        Boolean         @default(false) @map("is_deleted")
+  deletedAt        DateTime?       @map("deleted_at")
+  createdBy        String?         @db.Uuid @map("created_by")
+  updatedAt        DateTime?       @updatedAt @map("updated_at")
+  updatedBy        String?         @db.Uuid @map("updated_by")
+  deletedBy        String?         @db.Uuid @map("deleted_by")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([status])
+  @@map("api_client")
+}
